@@ -124,21 +124,19 @@ public class World {
         // Wird vom Haupt-Game-Loop aufgerufen (siehe unten)
     }
 
-    public void setActOrder(Class... classes) {
+    @SafeVarargs
+    public final void setActOrder(Class<? extends Actor>... classes) {
         actOrder.clear();
-        for (Class cls : classes) {
-            if (Actor.class.isAssignableFrom(cls)) { // Überprüfe, ob es eine Unterklasse von Actor ist
-                actOrder.add(cls);
-            }
+        for (Class<? extends Actor> cls : classes) {
+            actOrder.add(cls);
         }
     }
 
-    public void setPaintOrder(Class... classes) {
+    @SafeVarargs
+    public final void setPaintOrder(Class<? extends Actor>... classes) {
         paintOrder.clear();
-         for (Class cls : classes) {
-            if (Actor.class.isAssignableFrom(cls)) { // Überprüfe, ob es eine Unterklasse von Actor ist
-                paintOrder.add(cls);
-            }
+        for (Class<? extends Actor> cls : classes) {
+            paintOrder.add(cls);
         }
     }
 
