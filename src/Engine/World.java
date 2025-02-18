@@ -1,7 +1,6 @@
 package Engine;
 import java.awt.*;
 import java.awt.geom.AffineTransform;
-import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -14,6 +13,7 @@ public class World {
     private List<Actor> actors;
     private List<Class<? extends Actor>> actOrder;  // Für setActOrder
     private List<Class<? extends Actor>> paintOrder; // Für setPaintOrder
+    private SpatialGrid spatialGrid;
 
 
     public World(int width, int height, int cellSize) {
@@ -28,6 +28,7 @@ public class World {
         g.setColor(Color.WHITE);
         g.fillRect(0, 0, width * cellSize, height * cellSize);
         g.dispose();
+        this.spatialGrid = new SpatialGrid(cellSize * 2); // Größere Grid-Zellen für bessere Performance
     }
 	
 	  public void act() {
@@ -46,6 +47,7 @@ public class World {
     public void addObject(Actor object, int x, int y) {
         object.setLocation(x, y);
         actors.add(object);
+        spatialGrid.addActor(object);
         object.addedToWorld(this);
     }
 
@@ -111,7 +113,8 @@ public class World {
     public void removeObject(Actor object) {
         if (object != null) {
             actors.remove(object);
-            object.addedToWorld(null);  // Setze die World-Referenz zurück
+            spatialGrid.removeActor(object);
+            object.addedToWorld(null);
         }
     }
 
@@ -199,7 +202,7 @@ public class World {
 
             repaint(); // Zeichne die Welt neu
             try {
-                Thread.sleep(50); // Kleine Pause (für die Framerate)
+                Thread.sleep(25); // Kleine Pause (für die Framerate)
             } catch (InterruptedException e) {
                 // Handle exception
             }
@@ -253,5 +256,9 @@ public class World {
 	
 	        g.setTransform(originalTransform); // Ursprüngliche Transformation wiederherstellen
         }
+    }
+
+    public SpatialGrid getSpatialGrid() {
+        return spatialGrid;
     }
 }

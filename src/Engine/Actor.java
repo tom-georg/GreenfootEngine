@@ -10,6 +10,8 @@ public class Actor {
     private int y;
     private int rotation;
     private World world;
+    private double exactX;
+    private double exactY;
 
     public Actor() {
         // Standardkonstruktor (könnte ein Standardbild setzen)
@@ -51,8 +53,16 @@ public class Actor {
     }
 
     public void setLocation(int x, int y) {
+        if (world != null) {
+            world.getSpatialGrid().removeActor(this);
+        }
         this.x = x;
         this.y = y;
+        this.exactX = x;
+        this.exactY = y;
+        if (world != null) {
+            world.getSpatialGrid().addActor(this);
+        }
     }
 
     public int getRotation() {
@@ -65,12 +75,19 @@ public class Actor {
 
     public void move(int distance) {
         double radians = Math.toRadians(rotation);
-        int dx = (int) Math.round(distance * Math.cos(radians));
-        int dy = (int) Math.round(distance * Math.sin(radians));
-        setLocation(x + dx, y + dy);
+        double dx = distance * Math.cos(radians);
+        double dy = distance * Math.sin(radians);
+        
+        // Aktualisiere die exakte Position
+        exactX = (exactX == 0 ? x : exactX) + dx;
+        exactY = (exactY == 0 ? y : exactY) + dy;
+        
+        // Setze die gerundete Position
+        setLocation((int) Math.round(exactX), (int) Math.round(exactY));
     }
 
     public void turn(int amount) {
+        //amount = amount *-1;
         rotation = (rotation + amount) % 360;
         if (rotation < 0) {
             rotation += 360; // Stelle sicher, dass die Rotation zwischen 0 und 359 bleibt
@@ -101,8 +118,11 @@ public class Actor {
     protected <A> List<A> getIntersectingObjects(Class<A> cls) {
         List<A> intersecting = new ArrayList<>();
         if (world != null) {
-            for (Actor other : world.getObjects(Actor.class)) {
-                if (other != this && cls.isInstance(other) && intersects(other)) {
+            // Hole nur potenzielle Kollisionen aus dem SpatialGrid
+            List<Actor> potentialCollisions = world.getSpatialGrid().getPotentialCollisions(this);
+            
+            for (Actor other : potentialCollisions) {
+                if (cls.isInstance(other) && intersects(other)) {
                     intersecting.add(cls.cast(other));
                 }
             }
@@ -111,12 +131,117 @@ public class Actor {
     }
 
     protected boolean intersects(Actor other) {
-    	if (this.image == null || other.image == null) return false;
+        if (this.image == null || other.image == null) return false;
+        
+        // Phase 1: Grobe AABB-Prüfung (schnell, aber ungenau)
+        int thisHalfWidth = image.getWidth() / 2;
+        int thisHalfHeight = image.getHeight() / 2;
+        int otherHalfWidth = other.getImage().getWidth() / 2;
+        int otherHalfHeight = other.getImage().getHeight() / 2;
+        
+        // Schnelle Überprüfung der Grenzen
+        if (Math.abs(this.x - other.x) > (thisHalfWidth + otherHalfWidth)) return false;
+        if (Math.abs(this.y - other.y) > (thisHalfHeight + otherHalfHeight)) return false;
+        
+        // Phase 2: Genauere OBB-Kollisionsprüfung (Oriented Bounding Box)
+        Point[] thisCorners = getRotatedCorners(this);
+        Point[] otherCorners = getRotatedCorners(other);
+        
+        // Separating Axis Theorem (SAT)
+        return checkSATCollision(thisCorners, otherCorners);
+    }
 
-        // Einfache Rechteck-Kollisionserkennung (kann durch präzisere Methoden ersetzt werden)
-        Rectangle myRect = new Rectangle(x, y, image.getWidth(), image.getHeight());
-        Rectangle otherRect = new Rectangle(other.getX(), other.getY(), other.getImage().getWidth(), other.getImage().getHeight());
-        return myRect.intersects(otherRect);
+    private Point[] getRotatedCorners(Actor actor) {
+        int halfWidth = actor.getImage().getWidth() / 2;
+        int halfHeight = actor.getImage().getHeight() / 2;
+        double rad = Math.toRadians(actor.getRotation());
+        double cos = Math.cos(rad);
+        double sin = Math.sin(rad);
+        
+        Point[] corners = new Point[4];
+        // Ursprüngliche Eckpunkte relativ zum Zentrum
+        int[][] points = {
+            {-halfWidth, -halfHeight},
+            {halfWidth, -halfHeight},
+            {halfWidth, halfHeight},
+            {-halfWidth, halfHeight}
+        };
+        
+        // Rotiere jeden Punkt und verschiebe ihn zur Position des Actors
+        for (int i = 0; i < 4; i++) {
+            int rotX = (int) (points[i][0] * cos - points[i][1] * sin);
+            int rotY = (int) (points[i][0] * sin + points[i][1] * cos);
+            corners[i] = new Point(rotX + actor.getX() + halfWidth, 
+                                 rotY + actor.getY() + halfHeight);
+        }
+        
+        return corners;
+    }
+
+    private boolean checkSATCollision(Point[] corners1, Point[] corners2) {
+        // Prüfe Projektion auf alle Achsen des ersten Rechtecks
+        for (int i = 0; i < 4; i++) {
+            Point p1 = corners1[i];
+            Point p2 = corners1[(i + 1) % 4];
+            
+            // Normale zur Kante
+            double normalX = -(p2.y - p1.y);
+            double normalY = p2.x - p1.x;
+            
+            // Normalisiere
+            double len = Math.sqrt(normalX * normalX + normalY * normalY);
+            normalX /= len;
+            normalY /= len;
+            
+            // Projiziere beide Körper auf die Achse
+            if (!overlapsOnAxis(corners1, corners2, normalX, normalY)) {
+                return false;
+            }
+        }
+        
+        // Prüfe Projektion auf alle Achsen des zweiten Rechtecks
+        for (int i = 0; i < 4; i++) {
+            Point p1 = corners2[i];
+            Point p2 = corners2[(i + 1) % 4];
+            
+            double normalX = -(p2.y - p1.y);
+            double normalY = p2.x - p1.x;
+            
+            double len = Math.sqrt(normalX * normalX + normalY * normalY);
+            normalX /= len;
+            normalY /= len;
+            
+            if (!overlapsOnAxis(corners1, corners2, normalX, normalY)) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    private boolean overlapsOnAxis(Point[] corners1, Point[] corners2, 
+                                 double axisX, double axisY) {
+        double min1 = Double.POSITIVE_INFINITY;
+        double max1 = Double.NEGATIVE_INFINITY;
+        double min2 = Double.POSITIVE_INFINITY;
+        double max2 = Double.NEGATIVE_INFINITY;
+        
+        // Projiziere alle Punkte des ersten Rechtecks
+        for (Point p : corners1) {
+            double proj = p.x * axisX + p.y * axisY;
+            min1 = Math.min(min1, proj);
+            max1 = Math.max(max1, proj);
+        }
+        
+        // Projiziere alle Punkte des zweiten Rechtecks
+        for (Point p : corners2) {
+            double proj = p.x * axisX + p.y * axisY;
+            min2 = Math.min(min2, proj);
+            max2 = Math.max(max2, proj);
+        }
+        
+        // Prüfe auf Überlappung
+        return !(max1 < min2 || max2 < min1);
     }
     
 
